@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>MongoDB 채팅 예시</title>
+    <!-- sockjs, stomp, jQuery CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+
+    <style>
+        /* ===== 레이아웃 기본 ===== */
+        html, body { margin: 0; padding: 0; height: 100%; }
+        .container {
+            display: flex;
+            width: 100%; height: 100vh;
+            font-family: sans-serif;
+        }
+        /* ===== 왼쪽 방 목록 ===== */
+        .room-list {
+            width: 25%;
+            background-color: #f2f2f2;
+            border-right: 1px solid #ccc;
+            overflow-y: auto;
+        }
+        .room-header {
+            margin: 0; padding: 10px;
+            background-color: #ddd;
+        }
+        .room-item {
+            padding: 10px; cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        .room-item:hover {
+            background-color: #e6e6e6;
+        }
+
+        /* ===== 오른쪽 채팅 ===== */
+        .chat-area {
+            flex: 1;
+            display: flex; flex-direction: column;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #fff;
+        }
+
+        /* ===== 말풍선 ===== */
+        .chat-bubble {
+            max-width: 60%;
+            margin: 5px 0;
+            padding: 8px 12px;
+            border-radius: 15px;
+            line-height: 1.4;
+            clear: both;
+        }
+        .my-message {
+            float: right;
+            background-color: #d2f8d2;
+            text-align: right;
+        }
+        .other-message {
+            float: left;
+            background-color: #f1f0f0;
+        }
+
+        /* ===== 메시지 입력창 ===== */
+        .input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+        }
+        .input-area input {
+            flex: 1; padding: 8px;
+        }
+        .input-area button {
+            padding: 8px 16px; margin-left: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 왼쪽: 채팅방 목록 -->
+        <div class="room-list">
+            <h2 class="room-header">채팅방 목록</h2>
+            <div id="roomContainer"></div>
+        </div>
+
+        <!-- 오른쪽: 채팅 내용 -->
+        <div class="chat-area">
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="input-area">
+                <input type="text" id="messageInput" placeholder="메시지를 입력하세요">
+                <button onclick="sendMessage()">전송</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let currentUser = "";   // 로그인 사용자
+        let currentRoom = "";   // 현재 선택된 방 (문자열)
+
+        const roomContainerEl = document.getElementById("roomContainer");
+        const chatMessagesEl   = document.getElementById("chatMessages");
+
+        /* ================================
+            1) 페이지 로드 시 처리
+        ================================= */
+        $(document).ready(function () {
+            // 1-1) ERP에서 로그인 사용자 가져오기
+            $.ajax({
+                url: "http://127.0.0.1:9500/erp/member/getSessionUser",
+                type: "GET",
+                xhrFields: { withCredentials: true },
+                success: function (res) {
+                    if (res.status === "success") {
+                        currentUser = res.name;
+                        console.log("로그인된 사용자:", currentUser);
+                        // 1-2) 자동 WebSocket 연결 시도
+                        connectWebSocket();
+                        // 1-3) 채팅방 목록 가져오기
+                        loadRoomList();
+                    } else {
+                        console.log("❌ 로그인된 사용자 없음");
+                        currentUser = "익명";
+                        alert("로그인 정보가 없습니다. 로그인 후 이용해주세요.");
+                    }
+                },
+                error: function () {
+                    console.log("❌ 사용자 정보 가져오기 실패");
+                    currentUser = "익명";
+                    alert("로그인 정보가 없습니다. 로그인 후 이용해주세요.");
+                }
+            });
+        });
+
+        /* ================================
+            2) WebSocket 연결 (자동)
+        ================================= */
+        function connectWebSocket() {
+            if (!currentUser || currentUser === "익명") {
+                console.log("로그인이 아니므로 WebSocket 연결 스킵");
+                return;
+            }
+            // 이미 연결되어 있으면 재연결 불필요
+            if (stompClient && stompClient.connected) {
+                console.log("이미 WebSocket 연결됨");
+                return;
+            }
+            // SockJS + stomp
+            const socket = new SockJS("http://127.0.0.1:9500/chat/ws-stomp");
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, function (frame) {
+                console.log("✅ WebSocket 연결 완료:", frame);
+                // 메시지 수신 구독
+                stompClient.subscribe("/topic/messages", function (message) {
+                    const data = JSON.parse(message.body);
+                    // 현재 열려있는 방과 동일할 때만 표시 (roomName이 일치하는가?)
+                    if (data.roomName === currentRoom) {
+                        addMessageBubble(data);
+                    }
+                });
+            }, function (error) {
+                console.error("❌ WebSocket 연결 실패:", error);
+                alert("서버와 연결할 수 없습니다.");
+            });
+        }
+
+        /* ================================
+            3) 채팅방 목록 가져오기
+        ================================= */
+        function loadRoomList() {
+            // 서버에서 채팅방 목록을 가져오는 엔드포인트를 가정(/chat/rooms)
+            $.ajax({
+                url: "http://127.0.0.1:9500/chat/rooms",
+                type: "GET",
+                success: function (rooms) {
+                    // rooms = ["개발팀", "영업팀", ...] 이라고 가정
+                    renderRoomList(rooms);
+                },
+                error: function () {
+                    console.error("❌ 채팅방 목록을 가져올 수 없습니다.");
+                }
+            });
+        }
+
+        function renderRoomList(rooms) {
+            roomContainerEl.innerHTML = "";
+            rooms.forEach(roomName => {
+                const div = document.createElement("div");
+                div.className = "room-item";
+                div.innerText = roomName;
+                // 더블클릭하면 해당 방 접속
+                div.ondblclick = () => {
+                    selectRoom(roomName);
+                };
+                roomContainerEl.appendChild(div);
+            });
+        }
+
+        /* ================================
+            4) 방 선택 & 이전 메시지 불러오기
+        ================================= */
+        function selectRoom(roomName) {
+            // 현재 방 설정
+            currentRoom = roomName;
+            // 채팅창 비우기
+            chatMessagesEl.innerHTML = "";
+            // REST API로 과거 메시지 로드
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/messages/${encodeURIComponent(roomName)}`,
+                type: "GET",
+                success: function (messages) {
+                    // [{name, roomName, content, ...}, ...]
+                    messages.forEach(msg => {
+                        addMessageBubble(msg);
+                    });
+                    // 마지막으로 스크롤
+                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+                },
+                error: function () {
+                    console.error("❌ 메시지 목록 가져오기 실패");
+                }
+            });
+        }
+
+        /* ================================
+            5) 메시지 전송
+        ================================= */
+        function sendMessage() {
+            if (!stompClient || !stompClient.connected) {
+                alert("WebSocket 연결되지 않았습니다.");
+                return;
+            }
+            if (!currentRoom) {
+                alert("채팅방을 먼저 선택하세요.");
+                return;
+            }
+            const content = $("#messageInput").val().trim();
+            if (!content) return;
+
+            const chatMessage = {
+                name: currentUser,
+                roomName: currentRoom,
+                content: content
+            };
+
+            stompClient.send("/app/chat", {}, JSON.stringify(chatMessage));
+            // 입력창 비우기
+            $("#messageInput").val("");
+        }
+
+        /* ================================
+            6) 말풍선 UI 표시
+        ================================= */
+        function addMessageBubble(msg) {
+            const bubble = document.createElement("div");
+            bubble.classList.add("chat-bubble");
+
+            if (msg.name === currentUser) {
+                bubble.classList.add("my-message");
+            } else {
+                bubble.classList.add("other-message");
+            }
+            bubble.innerText = `[${msg.name}] ${msg.content}`;
+            chatMessagesEl.appendChild(bubble);
+
+            // 스크롤 맨 아래로
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>

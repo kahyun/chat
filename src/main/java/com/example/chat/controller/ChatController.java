@@ -5,8 +5,6 @@ import com.example.chat.service.ChatService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.Resource;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
@@ -23,10 +21,11 @@ public class ChatController {
     private final SimpMessagingTemplate simpMessagingTemplate;
 
 
-    @GetMapping("/chat-test")
+    @GetMapping("/chat-room")
     public String serveChatTestHtml() {
-       return "chat-test";
+       return "chat-room";
     }
+
     @MessageMapping("/chat")
     public void processMessage(ChatMessage message) {
         logger.info("📩 서버에서 받은 메시지: {}", message);
@@ -45,14 +44,11 @@ public class ChatController {
 
 
 // ✅ 채팅 메시지 저장 (REST API)
-    @PostMapping("/message")
+    @PostMapping("/messages")
     public ChatMessage saveMessage(@RequestBody ChatMessage message) {
         return chatService.saveMessage(message);
     }
 
-    // ✅ 특정 채팅방의 메시지 조회 (REST API)
-    @GetMapping("/messages/{roomName}")
-    public List<ChatMessage> getMessages(@PathVariable String roomName) {
-        return chatService.getMessagesByRoom(roomName);
-    }
+
+
 }

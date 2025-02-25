@@ -1,10 +1,14 @@
 package com.example.chat.entity;
 
 import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
 
+@NoArgsConstructor
+@Data
 @AllArgsConstructor
 @Document(collection = "messages")  // ✅ MongoDB 컬렉션
 public class ChatMessage {

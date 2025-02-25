@@ -32,7 +32,5 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.enableSimpleBroker("/topic", "/queue");
         // 클라이언트 발행 prefix: /app
         registry.setApplicationDestinationPrefixes("/app");
-
-        logger.info("✅ 메시지 브로커 설정 완료: /topic, /queue 사용 가능");
     }
 }
