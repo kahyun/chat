@@ -3,6 +3,7 @@ package com.example.chat.controller;
 import com.example.chat.entity.ChatMessage;
 import com.example.chat.service.ChatService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import java.util.List;
 public class ChatRestController {
 
     private final ChatService chatService;
+    private final SimpMessagingTemplate simpMessagingTemplate;
 
     // DB에서 roomName 컬럼만 distinct 추출
     @GetMapping("/rooms")
@@ -21,5 +23,11 @@ public class ChatRestController {
     @GetMapping("/messages/{roomName}")
     public List<ChatMessage> getMessages(@PathVariable String roomName) {
         return chatService.getMessagesByRoom(roomName);
+    }
+    @DeleteMapping("/messages/{id}")
+    public ChatMessage deleteMessage(@PathVariable String id) {
+        ChatMessage updated = chatService.deleteMessage(id);
+        simpMessagingTemplate.convertAndSend("/topic/messages", updated);
+        return updated;
     }
 }

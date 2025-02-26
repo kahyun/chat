@@ -79,6 +79,27 @@
             padding: 8px 16px; margin-left: 5px;
             cursor: pointer;
         }
+        /* ===== 커스텀 컨텍스트 메뉴 ===== */
+        #customMenu {
+            position: absolute;
+            background: #fff;
+            border: 1px solid #ccc;
+            display: none;
+            z-index: 1000;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+        }
+        #customMenu ul {
+            list-style: none;
+            margin: 0;
+            padding: 5px 0;
+        }
+        #customMenu li {
+            padding: 5px 15px;
+            cursor: pointer;
+        }
+        #customMenu li:hover {
+            background-color: #eee;
+        }
     </style>
 </head>
 <body>
@@ -98,18 +119,23 @@
             </div>
         </div>
     </div>
-
+    <!-- 커스텀 컨텍스트 메뉴 -->
+    <div id="customMenu">
+        <ul>
+            <li id="deleteOption">삭제</li>
+        </ul>
+    </div>
     <script>
         let stompClient = null;
         let currentUser = "";   // 로그인 사용자
         let currentRoom = "";   // 현재 선택된 방 (문자열)
+        let currentMessageId = null; // 우클릭한 메시지의 ID
 
         const roomContainerEl = document.getElementById("roomContainer");
         const chatMessagesEl   = document.getElementById("chatMessages");
+        const customMenu       = document.getElementById("customMenu");
+            // 1) 페이지 로드 시 처리
 
-        /* ================================
-            1) 페이지 로드 시 처리
-        ================================= */
         $(document).ready(function () {
             // 1-1) ERP에서 로그인 사용자 가져오기
             $.ajax({
@@ -138,9 +164,8 @@
             });
         });
 
-        /* ================================
-            2) WebSocket 연결 (자동)
-        ================================= */
+            // 2) WebSocket 연결 (자동)
+
         function connectWebSocket() {
             if (!currentUser || currentUser === "익명") {
                 console.log("로그인이 아니므로 WebSocket 연결 스킵");
@@ -162,7 +187,13 @@
                     const data = JSON.parse(message.body);
                     // 현재 열려있는 방과 동일할 때만 표시 (roomName이 일치하는가?)
                     if (data.roomName === currentRoom) {
-                        addMessageBubble(data);
+                        if (data.deleted === true) {
+                            // 이미 표시된 말풍선을 찾아서 텍스트를 "삭제된 메시지 입니다."로 변경
+                            updateBubbleContent(data.id, data.content);
+                        } else {
+                            // 일반 메시지 도착 시 -> 말풍선 새로 추가
+                            addMessageBubble(data);
+                        }
                     }
                 });
             }, function (error) {
@@ -171,9 +202,8 @@
             });
         }
 
-        /* ================================
-            3) 채팅방 목록 가져오기
-        ================================= */
+        // 3) 채팅방 목록 가져오기
+
         function loadRoomList() {
             // 서버에서 채팅방 목록을 가져오는 엔드포인트를 가정(/chat/rooms)
             $.ajax({
@@ -203,9 +233,8 @@
             });
         }
 
-        /* ================================
-            4) 방 선택 & 이전 메시지 불러오기
-        ================================= */
+            // 4) 방 선택 & 이전 메시지 불러오기
+
         function selectRoom(roomName) {
             // 현재 방 설정
             currentRoom = roomName;
@@ -229,9 +258,8 @@
             });
         }
 
-        /* ================================
-            5) 메시지 전송
-        ================================= */
+            // 5) 메시지 전송
+
         function sendMessage() {
             if (!stompClient || !stompClient.connected) {
                 alert("WebSocket 연결되지 않았습니다.");
@@ -255,24 +283,85 @@
             $("#messageInput").val("");
         }
 
-        /* ================================
-            6) 말풍선 UI 표시
-        ================================= */
+             // 6) 메시지 삭제
+
+        function deleteMessage(messageId) {
+            $.ajax({
+                url: "http://127.0.0.1:9500/chat/messages/" + messageId,
+                type: "DELETE",
+                success: function(updatedMessage) {
+                    console.log("삭제 완료", updatedMessage);
+                    // 클라이언트가 이미 말풍선을 렌더링하고 있다면,
+                    // messageId에 해당하는 말풍선 찾아 "삭제된 메시지 입니다." 로 UI 변경
+                    updateBubbleContent(updatedMessage.id, updatedMessage.content);
+                },
+                error: function(err) {
+                    console.error("메시지 삭제 실패", err);
+                }
+            });
+        }
+
+            // 7) 말풍선 UI 표시
+
         function addMessageBubble(msg) {
             const bubble = document.createElement("div");
             bubble.classList.add("chat-bubble");
 
+            // 메시지 식별자(data-id)에 저장
+            bubble.dataset.id = msg.id;
+
+            // 본인 메시지 vs 상대 메시지 구분
             if (msg.name === currentUser) {
                 bubble.classList.add("my-message");
             } else {
                 bubble.classList.add("other-message");
             }
+            // 말풍선 내용 표시
             bubble.innerText = `[${msg.name}] ${msg.content}`;
             chatMessagesEl.appendChild(bubble);
 
-            // 스크롤 맨 아래로
+            // 우클릭(컨텍스트 메뉴) 이벤트 리스너
+            bubble.addEventListener("contextmenu", function (e) {
+                e.preventDefault(); // 기본 컨텍스트 메뉴 뜨지 않도록
+                e.stopPropagation();  // 이벤트 전파도 중지
+
+                // 본인 메시지 여부 확인
+                if (msg.name !== currentUser) {
+                    alert("본인이 보낸 메시지만 삭제할 수 있습니다.");
+                    return false;
+                }
+                // 현재 메시지 ID 저장
+                currentMessageId = msg.id;
+                // 커스텀 메뉴 위치 및 표시
+                customMenu.style.left = e.pageX + "px";
+                customMenu.style.top = e.pageY + "px";
+                customMenu.style.display = "block";
+                return false;
+            });
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
         }
+        function updateBubbleContent(messageId, newContent) {
+            let bubble = document.querySelector(`.chat-bubble[data-id='${messageId}']`);
+            if (bubble) {
+                bubble.innerText = newContent;
+            }
+        }
+
+        // 커스텀 메뉴의 "삭제" 옵션 클릭 이벤트 처리
+        document.getElementById("deleteOption").addEventListener("click", function() {
+            if (currentMessageId) {
+                deleteMessage(currentMessageId);
+            }
+            customMenu.style.display = "none";
+            currentMessageId = null;
+        });
+        // 문서 전체 클릭 시 커스텀 메뉴 숨김 (단, 우클릭 시 이벤트와 충돌하지 않도록)
+        document.addEventListener("click", function(e) {
+            if (customMenu.style.display === "block") {
+                customMenu.style.display = "none";
+            }
+        });
+
     </script>
 </body>
 </html>

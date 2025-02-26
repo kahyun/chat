@@ -15,7 +15,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class ChatService {
-    private static final Logger logger = (Logger) LoggerFactory.getLogger(ChatService.class);
     private final ChatMessageRepository chatMessageRepository;
     private final MongoTemplate mongoTemplate;
 
@@ -27,13 +26,12 @@ public class ChatService {
                     message.getRoomName(),
                     message.getContent(),
                     LocalDateTime.now(),
+                    false,
                     false
             );
             ChatMessage saved = chatMessageRepository.save(message);
-            logger.info("✅ DB 저장 완료: {}");
             return saved;
         } catch (Exception e) {
-            logger.error("❌ DB 저장 실패!", e);
             return null;
         }
     }
@@ -46,5 +44,19 @@ public class ChatService {
                 .distinct("roomName")
                 .as(String.class)
                 .all();
+    }
+    public ChatMessage deleteMessage(String messageId) {
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new RuntimeException("메시지를 찾을 수 없습니다:"+ messageId));
+        message = new ChatMessage(
+                message.getId(),
+                message.getName(),
+                message.getRoomName(),
+                "삭제된 메시지입니다.",
+                message.getCreatedAt(),
+                message.getRead(),
+                true // deleted = true
+        );
+        return chatMessageRepository.save(message);
     }
 }
