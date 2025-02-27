@@ -48,15 +48,7 @@ public class ChatService {
     public ChatMessage deleteMessage(String messageId) {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("메시지를 찾을 수 없습니다:"+ messageId));
-        message = new ChatMessage(
-                message.getId(),
-                message.getName(),
-                message.getRoomName(),
-                "삭제된 메시지입니다.",
-                message.getCreatedAt(),
-                message.getRead(),
-                true // deleted = true
-        );
+        message.setDeleted(true);
         return chatMessageRepository.save(message);
     }
 }

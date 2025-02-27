@@ -22,10 +22,19 @@
             background-color: #f2f2f2;
             border-right: 1px solid #ccc;
             overflow-y: auto;
+            position: relative;
         }
         .room-header {
             margin: 0; padding: 10px;
             background-color: #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .room-header h2 { margin: 0; }
+        .room-header button {
+            padding: 5px 10px;
+            cursor: pointer;
         }
         .room-item {
             padding: 10px; cursor: pointer;
@@ -100,13 +109,60 @@
         #customMenu li:hover {
             background-color: #eee;
         }
+        /* 모달 창 (방 생성) */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 300px;
+            border-radius: 8px;
+        }
+        .modal-content h3 {
+            margin-top: 0;
+        }
+        .modal-content input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+        }
+        .modal-content .member-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+        .modal-content .member-item {
+            display: block;
+            margin: 4px 0;
+        }
+        .modal-content button {
+            padding: 8px 12px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- 왼쪽: 채팅방 목록 -->
         <div class="room-list">
-            <h2 class="room-header">채팅방 목록</h2>
+            <div class="room-header">
+                <h2>채팅방 목록</h2>
+                <button id="createRoomBtn">+</button>
+            </div>
             <div id="roomContainer"></div>
         </div>
 
@@ -125,18 +181,79 @@
             <li id="deleteOption">삭제</li>
         </ul>
     </div>
+    <!-- 모달 창: 방 생성/초대 -->
+    <div id="roomModal" class="modal">
+        <div class="modal-content">
+            <h3>방 생성</h3>
+            <label for="modalRoomName">방 이름:</label>
+            <input type="text" id="modalRoomName" placeholder="방 이름 입력">
+            <label>초대할 멤버:</label>
+            <div class="member-list" id="memberList">
+                <!-- 동적으로 멤버 체크박스 추가 (예시: static 데이터) -->
+            </div>
+            <button id="confirmRoomBtn">확인</button>
+            <button id="cancelRoomBtn">취소</button>
+        </div>
+    </div>
+
     <script>
         let stompClient = null;
         let currentUser = "";   // 로그인 사용자
         let currentRoom = "";   // 현재 선택된 방 (문자열)
         let currentMessageId = null; // 우클릭한 메시지의 ID
+        let availableMembers = []; // ERP에서 가져온 회원 ID 목록
 
         const roomContainerEl = document.getElementById("roomContainer");
         const chatMessagesEl   = document.getElementById("chatMessages");
         const customMenu       = document.getElementById("customMenu");
-            // 1) 페이지 로드 시 처리
+        const roomModal = document.getElementById("roomModal");
+        const modalRoomName = document.getElementById("modalRoomName");
+        const memberListEl = document.getElementById("memberList");
 
-        $(document).ready(function () {
+        // ERP 회원 목록을 가져오는 함수 (member 테이블의 Id 컬럼 사용)
+        function fetchAvailableMembers() {
+            $.ajax({
+                url: "http://127.0.0.1:9500/erp/member/all",  // ERP 회원 목록 API 엔드포인트 (예시)
+                type: "GET",
+                xhrFields: { withCredentials: true },
+                success: function(data) {
+                    // data가 [{ id: "alice" }, { id: "bob" }, ...] 형태라고 가정
+                    availableMembers = data.map(member => member.id);
+                    renderMemberList();
+                },
+                error: function() {
+                    console.error("회원 목록을 가져올 수 없습니다.");
+                }
+            });
+        }
+        // 모달 창에 멤버 목록 렌더링
+        function renderMemberList() {
+            memberListEl.innerHTML = "";
+            availableMembers.forEach(member => {
+                const label = document.createElement("label");
+                label.className = "member-item";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.value = member;
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(" " + member));
+                memberListEl.appendChild(label);
+            });
+        }
+
+        $("#deleteOption").on("click", function() {
+            if (currentMessageId) {
+                deleteMessage(currentMessageId);
+            }
+            customMenu.style.display = "none";
+            currentMessageId = null;
+        });
+
+        // 문서 전체 클릭 시 커스텀 메뉴 숨김
+        $(document).on("click", function() {
+            $("#customMenu").hide();
+        });
+
             // 1-1) ERP에서 로그인 사용자 가져오기
             $.ajax({
                 url: "http://127.0.0.1:9500/erp/member/getSessionUser",
@@ -151,29 +268,22 @@
                         // 1-3) 채팅방 목록 가져오기
                         loadRoomList();
                     } else {
-                        console.log("❌ 로그인된 사용자 없음");
-                        currentUser = "익명";
                         alert("로그인 정보가 없습니다. 로그인 후 이용해주세요.");
                     }
                 },
                 error: function () {
-                    console.log("❌ 사용자 정보 가져오기 실패");
-                    currentUser = "익명";
                     alert("로그인 정보가 없습니다. 로그인 후 이용해주세요.");
                 }
-            });
         });
 
             // 2) WebSocket 연결 (자동)
 
         function connectWebSocket() {
             if (!currentUser || currentUser === "익명") {
-                console.log("로그인이 아니므로 WebSocket 연결 스킵");
                 return;
             }
             // 이미 연결되어 있으면 재연결 불필요
             if (stompClient && stompClient.connected) {
-                console.log("이미 WebSocket 연결됨");
                 return;
             }
             // SockJS + stomp
@@ -202,12 +312,12 @@
             });
         }
 
-        // 3) 채팅방 목록 가져오기
+        // 3) 채팅방 목록 가져오기 (현재 사용자가 초대된 방만)
 
         function loadRoomList() {
             // 서버에서 채팅방 목록을 가져오는 엔드포인트를 가정(/chat/rooms)
             $.ajax({
-                url: "http://127.0.0.1:9500/chat/rooms",
+                url: "http://127.0.0.1:9500/chat/rooms/member/"+currentUser,
                 type: "GET",
                 success: function (rooms) {
                     // rooms = ["개발팀", "영업팀", ...] 이라고 가정
@@ -221,13 +331,13 @@
 
         function renderRoomList(rooms) {
             roomContainerEl.innerHTML = "";
-            rooms.forEach(roomName => {
+            rooms.forEach(room => {
                 const div = document.createElement("div");
                 div.className = "room-item";
-                div.innerText = roomName;
+                div.innerText = room.roomName; //room객체의 roomName
                 // 더블클릭하면 해당 방 접속
                 div.ondblclick = () => {
-                    selectRoom(roomName);
+                    selectRoom(room.roomName);
                 };
                 roomContainerEl.appendChild(div);
             });
@@ -293,7 +403,7 @@
                     console.log("삭제 완료", updatedMessage);
                     // 클라이언트가 이미 말풍선을 렌더링하고 있다면,
                     // messageId에 해당하는 말풍선 찾아 "삭제된 메시지 입니다." 로 UI 변경
-                    updateBubbleContent(updatedMessage.id, updatedMessage.content);
+                    updateBubbleContent(updatedMessage.id, updatedMessage.content,updatedMessage.deleted);
                 },
                 error: function(err) {
                     console.error("메시지 삭제 실패", err);
@@ -310,16 +420,14 @@
             // 메시지 식별자(data-id)에 저장
             bubble.dataset.id = msg.id;
 
-            // 본인 메시지 vs 상대 메시지 구분
+            const displayContent = msg.deleted ? "삭제된 메시지입니다." : msg.content;
+            bubble.innerText = `[${msg.name}] ${displayContent}`;
             if (msg.name === currentUser) {
                 bubble.classList.add("my-message");
             } else {
                 bubble.classList.add("other-message");
             }
-            // 말풍선 내용 표시
-            bubble.innerText = `[${msg.name}] ${msg.content}`;
             chatMessagesEl.appendChild(bubble);
-
             // 우클릭(컨텍스트 메뉴) 이벤트 리스너
             bubble.addEventListener("contextmenu", function (e) {
                 e.preventDefault(); // 기본 컨텍스트 메뉴 뜨지 않도록
@@ -340,28 +448,59 @@
             });
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
         }
-        function updateBubbleContent(messageId, newContent) {
+        function updateBubbleContent(messageId, newContent, isDeleted) {
             let bubble = document.querySelector(`.chat-bubble[data-id='${messageId}']`);
             if (bubble) {
-                bubble.innerText = newContent;
+                bubble.innerText = isDeleted ? "삭제된 메시지입니다." : newContent;
             }
         }
 
-        // 커스텀 메뉴의 "삭제" 옵션 클릭 이벤트 처리
-        document.getElementById("deleteOption").addEventListener("click", function() {
-            if (currentMessageId) {
-                deleteMessage(currentMessageId);
-            }
-            customMenu.style.display = "none";
-            currentMessageId = null;
+        // 방 생성 버튼 클릭 시: 모달 창 표시 + ERP 회원 목록 가져오기
+        $("#createRoomBtn").on("click", function(e) {
+            e.preventDefault();
+            fetchAvailableMembers(); // ERP에서 회원 목록 가져오기
+            $("#roomModal").show();
         });
-        // 문서 전체 클릭 시 커스텀 메뉴 숨김 (단, 우클릭 시 이벤트와 충돌하지 않도록)
-        document.addEventListener("click", function(e) {
-            if (customMenu.style.display === "block") {
-                customMenu.style.display = "none";
-            }
+        // 모달 "취소" 버튼
+        $("#cancelRoomBtn").on("click", function(e) {
+            e.preventDefault();
+            $("#roomModal").hide();
         });
-
+        // 모달 "확인" 버튼: 방 생성
+        $("#confirmRoomBtn").on("click", function(e) {
+            e.preventDefault();
+            const roomName = modalRoomName.value.trim();
+            if (!roomName) {
+                alert("방 이름을 입력하세요.");
+                return;
+            }
+            const selectedMembers = [];
+            $("#memberList input[type='checkbox']:checked").each(function() {
+                selectedMembers.push($(this).val());
+            });
+            if (selectedMembers.length === 0) {
+                alert("초대할 멤버를 선택하세요.");
+                return;
+            }
+            if (!selectedMembers.includes(currentUser)) {
+                selectedMembers.push(currentUser);
+            }
+            const roomData = { roomName: roomName, id: selectedMembers };
+            $.ajax({
+                url: "http://127.0.0.1:9500/chat/rooms",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify(roomData),
+                success: function(createRoom) {
+                    alert("방 생성 완료!");
+                    $("#roomModal").hide();
+                    loadRoomList();
+                },
+                error: function() {
+                    alert("방 생성 실패");
+                }
+            });
+        });
     </script>
 </body>
 </html>
