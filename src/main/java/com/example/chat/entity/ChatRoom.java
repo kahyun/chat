@@ -18,7 +18,7 @@ public class ChatRoom {
     private String roomId;
 
     private String roomName;
-    private List<String> id;
+    private List<String> name;
     private LocalDateTime createdAt;
 
 }

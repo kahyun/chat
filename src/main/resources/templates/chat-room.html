@@ -201,7 +201,7 @@
         let currentUser = "";   // 로그인 사용자
         let currentRoom = "";   // 현재 선택된 방 (문자열)
         let currentMessageId = null; // 우클릭한 메시지의 ID
-        let availableMembers = []; // ERP에서 가져온 회원 ID 목록
+        let availableMembers = []; // ERP에서 가져온 회원 name 목록
 
         const roomContainerEl = document.getElementById("roomContainer");
         const chatMessagesEl   = document.getElementById("chatMessages");
@@ -218,7 +218,10 @@
                 xhrFields: { withCredentials: true },
                 success: function(data) {
                     // data가 [{ id: "alice" }, { id: "bob" }, ...] 형태라고 가정
-                    availableMembers = data.map(member => member.id);
+                    let allNames = data.map(member => member.name);
+                    allNames = allNames.filter(name => name !== currentUser);
+
+                    availableMembers = allNames;
                     renderMemberList();
                 },
                 error: function() {
@@ -229,14 +232,14 @@
         // 모달 창에 멤버 목록 렌더링
         function renderMemberList() {
             memberListEl.innerHTML = "";
-            availableMembers.forEach(member => {
+            availableMembers.forEach(memberName => {
                 const label = document.createElement("label");
                 label.className = "member-item";
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
-                checkbox.value = member;
+                checkbox.value = memberName;
                 label.appendChild(checkbox);
-                label.appendChild(document.createTextNode(" " + member));
+                label.appendChild(document.createTextNode(" " + memberName));
                 memberListEl.appendChild(label);
             });
         }
@@ -485,7 +488,7 @@
             if (!selectedMembers.includes(currentUser)) {
                 selectedMembers.push(currentUser);
             }
-            const roomData = { roomName: roomName, id: selectedMembers };
+            const roomData = { roomName: roomName, name: selectedMembers };
             $.ajax({
                 url: "http://127.0.0.1:9500/chat/rooms",
                 type: "POST",

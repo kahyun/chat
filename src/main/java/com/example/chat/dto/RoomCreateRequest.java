@@ -7,5 +7,5 @@ import java.util.List;
 @Data
 public class RoomCreateRequest {
     private String roomName;
-    private List<String> id;
+    private List<String> name;
 }

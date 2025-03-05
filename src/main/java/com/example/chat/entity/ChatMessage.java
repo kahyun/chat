@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 public class ChatMessage {
 
     @Id
-    private String id;  // ✅ MongoDB는 String 타입 ID를 주로 사용
+    private String chatId;  // ✅ MongoDB는 String 타입 ID를 주로 사용
 
     private String name;
     private String roomName;

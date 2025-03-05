@@ -20,6 +20,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         logger.info("✅ WebSocket STOMP 엔드포인트 등록됨: /ws-stomp");
         registry.addEndpoint("/ws-stomp")
                 .setAllowedOriginPatterns("*")
+                //클라이언트의 도메인이나 포트에 상관없이 WebSocket 연결 요청을 허용
                 .withSockJS();
     }
 

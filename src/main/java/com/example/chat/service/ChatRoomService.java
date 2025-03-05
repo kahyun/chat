@@ -15,27 +15,27 @@ public class ChatRoomService {
     private final ChatRoomRepository chatRoomRepository;
 
     //채팅방 생성 ( 원본 내용은 보존 )
-    public ChatRoom createRoom(String roomName, List<String> id) {
+    public ChatRoom createRoom(String roomName, List<String> name) {
         ChatRoom chatRoom = new ChatRoom();
         chatRoom.setRoomName(roomName);
-        chatRoom.setId(id);
+        chatRoom.setName(name);
         chatRoom.setCreatedAt(LocalDateTime.now());
         ChatRoom savedRoom = chatRoomRepository.save(chatRoom);
         return savedRoom;
     }
 
-    public List<ChatRoom> getRoomsForId(String id) {
-        return chatRoomRepository.findByIdContaining(id);
+    public List<ChatRoom> getRoomsForName(String name) {
+        return chatRoomRepository.findByNameContaining(name);
     }
 
-    public ChatRoom addMember(String roomId, String newMemberId) {
+    public ChatRoom addMember(String roomId, String newMemberName) {
         Optional<ChatRoom> optionalRoom = chatRoomRepository.findById(roomId);
         if (optionalRoom.isPresent()) {
             ChatRoom room = optionalRoom.get();
-            List<String> memberList = room.getId();
-            if (!memberList.contains(newMemberId)) {
-                memberList.add(newMemberId);
-                room.setId(memberList);
+            List<String> memberList = room.getName();
+            if (!memberList.contains(newMemberName)) {
+                memberList.add(newMemberName);
+                room.setName(memberList);
                 return chatRoomRepository.save(room);
             }
             return room;

@@ -21,7 +21,7 @@ public class ChatService {
     public ChatMessage saveMessage(ChatMessage message) {
         try {
             message = new ChatMessage(
-                    message.getId(),
+                    message.getChatId(),
                     message.getName(),
                     message.getRoomName(),
                     message.getContent(),

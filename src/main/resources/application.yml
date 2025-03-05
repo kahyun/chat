@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: chat
+
+  data:
+    mongodb:
+      uri: "mongodb://localhost:27017/chat_db"
+      database: chat_db
+
+server:
+  port: 2000
+  servlet:
+    context-path: /chat
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true

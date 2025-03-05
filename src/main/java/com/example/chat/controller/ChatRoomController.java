@@ -16,12 +16,12 @@ public class ChatRoomController {
 
     @PostMapping
     public ChatRoom createRoom(@RequestBody RoomCreateRequest roomCreateRequest) {
-        return chatRoomService.createRoom(roomCreateRequest.getRoomName(), roomCreateRequest.getId());
+        return chatRoomService.createRoom(roomCreateRequest.getRoomName(), roomCreateRequest.getName());
 
     }
-    @GetMapping("/member/{id}")
-    public List<ChatRoom> getRoomForId(@PathVariable String id) {
-        return chatRoomService.getRoomsForId(id);
+    @GetMapping("/member/{name}")
+    public List<ChatRoom> getRoomForName(@PathVariable String name) {
+        return chatRoomService.getRoomsForName(name);
     }
 
     @PostMapping("/{roomId}/members")
