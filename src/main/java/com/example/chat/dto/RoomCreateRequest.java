@@ -8,4 +8,5 @@ import java.util.List;
 public class RoomCreateRequest {
     private String roomName;
     private List<String> name;
+    private String creatorName;
 }

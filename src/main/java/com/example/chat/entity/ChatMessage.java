@@ -17,8 +17,9 @@ public class ChatMessage {
     private String chatId;  // ✅ MongoDB는 String 타입 ID를 주로 사용
 
     private String name;
-    private String roomName;
+    private String roomId;
     private String content;
+    private String imageUrl; // 이미지 저장 URL 추가
     private LocalDateTime createdAt;
     private Boolean read;
     private Boolean deleted; //false면 미삭제,true면 삭제

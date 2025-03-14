@@ -19,6 +19,7 @@ public class ChatRoom {
 
     private String roomName;
     private List<String> name;
+    private String creatorName;
     private LocalDateTime createdAt;
 
 }

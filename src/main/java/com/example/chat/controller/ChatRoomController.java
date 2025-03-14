@@ -16,7 +16,7 @@ public class ChatRoomController {
 
     @PostMapping
     public ChatRoom createRoom(@RequestBody RoomCreateRequest roomCreateRequest) {
-        return chatRoomService.createRoom(roomCreateRequest.getRoomName(), roomCreateRequest.getName());
+        return chatRoomService.createRoom(roomCreateRequest.getRoomName(), roomCreateRequest.getName(),roomCreateRequest.getCreatorName());
 
     }
     @GetMapping("/member/{name}")
@@ -27,5 +27,10 @@ public class ChatRoomController {
     @PostMapping("/{roomId}/members")
     public ChatRoom addMemberToRoom(@PathVariable String roomId, @RequestParam String Id) {
         return chatRoomService.addMember(roomId, Id);
+    }
+
+    @DeleteMapping("/{roomId}/members/{name}")
+    public ChatRoom removeMemberFromRoom(@PathVariable String roomId, @PathVariable String name) {
+        return chatRoomService.removeMember(roomId,name);
     }
 }

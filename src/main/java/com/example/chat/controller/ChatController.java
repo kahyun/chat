@@ -10,7 +10,9 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Controller
 @RequiredArgsConstructor
@@ -20,35 +22,19 @@ public class ChatController {
     private final ChatService chatService;
     private final SimpMessagingTemplate simpMessagingTemplate;
 
-
     @GetMapping("/chat-room")
-    public String serveChatTestHtml() {
-       return "chat-room";
+    public String serveChatTestHtml(){
+        return "chat-room";
     }
 
     @MessageMapping("/chat")
     public void processMessage(ChatMessage message) {
-        logger.info("📩 서버에서 받은 메시지: {}", message);
+        // 메시지에 누락된 데이터 채우기(서버에선 해당 사항을 못채움)
+        message.setCreatedAt(LocalDateTime.now());        // 현재 시간 추가
+        message.setRead(false);                           // 읽음 여부 기본값 설정
+        message.setDeleted(false);                        // 삭제 여부 기본값 설정
 
-        try {
-            // DB 저장 시도
-            ChatMessage saved = chatService.saveMessage(message);
-            logger.info("✅ 저장된 메시지: {}", saved);
-
-            // 구독자에게 메시지 전송
-            simpMessagingTemplate.convertAndSend("/topic/messages", saved);
-        } catch (Exception e) {
-            logger.error("❌ 메시지 저장 중 오류 발생!", e);
-        }
+        logger.info("WebSocket으로 받은 메시지: {}", message);
+        simpMessagingTemplate.convertAndSend("/topic/messages", message); // 메시지 전송만 수행
     }
-
-
-// ✅ 채팅 메시지 저장 (REST API)
-    @PostMapping("/messages")
-    public ChatMessage saveMessage(@RequestBody ChatMessage message) {
-        return chatService.saveMessage(message);
-    }
-
-
-
 }

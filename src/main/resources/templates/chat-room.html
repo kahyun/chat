@@ -7,6 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <style>
         /* ===== 레이아웃 기본 ===== */
@@ -153,6 +154,7 @@
             margin-right: 10px;
             cursor: pointer;
         }
+
     </style>
 </head>
 <body>
@@ -172,6 +174,15 @@
             <div class="input-area">
                 <input type="text" id="messageInput" placeholder="메시지를 입력하세요">
                 <button onclick="sendMessage()">전송</button>
+                    <!-- 이미지 업로드 버튼 -->
+                    <label for="imageUpload">
+                        <i class="fa fa-image" style="font-size: 30px;"></i>
+                    </label>
+                    <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+
+                <!-- 업로드된 이미지 미리보기 -->
+                <img id="imagePreview" style="max-width: 200px; display: none;">
+
             </div>
         </div>
     </div>
@@ -195,13 +206,47 @@
             <button id="cancelRoomBtn">취소</button>
         </div>
     </div>
+    <!-- 방 마우스 우클릭 시 표시할 컨텍스트 메뉴 -->
+    <div id="roomContextMenu" style="display:none; position:absolute; z-index:999; background:#fff; border:1px solid #ccc;">
+        <ul style="list-style:none; margin:0; padding:5px;">
+            <li id="viewRoomInfoOption">방정보</li>
+            <li id="leaveRoomOption">나가기</li>
+        </ul>
+    </div>
+
+    <!-- 우클릭 시 방 정보 모달 -->
+    <div id="roomInfoModal" class="modal">
+        <div class="modal-content" id="roomInfoContent">
+            <h3>방 정보</h3>
+            <!-- 방 이미지 -->
+            <img id="roomImage" src="" alt="Room Image" style="display:block; margin: 0 auto; width:100px;">
+
+            <!-- 방 이름 -->
+            <p><strong>방 이름:</strong> <span id="roomInfoName"></span></p>
+
+            <!-- 참여자 목록 -->
+            <p><strong>대화 참여자:</strong></p>
+            <ul id="roomInfoMembers"></ul>
+
+            <!-- 방 개설일 -->
+            <p><strong>방 개설일:</strong> <span id="roomCreatedAt"></span></p>
+
+            <!-- 방 개설자 -->
+            <p><strong>방 개설자:</strong> <span id="roomCreator"></span></p>
+
+            <button id="roomInfoCloseBtn">닫기</button>
+        </div>
+    </div>
+
 
     <script>
         let stompClient = null;
         let currentUser = "";   // 로그인 사용자
         let currentRoom = "";   // 현재 선택된 방 (문자열)
-        let currentMessageId = null; // 우클릭한 메시지의 ID
+        let currentChatId = null; // 우클릭한 메시지의 ID
         let availableMembers = []; // ERP에서 가져온 회원 name 목록
+        let selectedRoomData = null;
+
 
         const roomContainerEl = document.getElementById("roomContainer");
         const chatMessagesEl   = document.getElementById("chatMessages");
@@ -245,11 +290,13 @@
         }
 
         $("#deleteOption").on("click", function() {
-            if (currentMessageId) {
-                deleteMessage(currentMessageId);
+            if (currentChatId) {
+                deleteMessage(currentChatId);
             }
             customMenu.style.display = "none";
-            currentMessageId = null;
+            currentChatId = null;
+
+
         });
 
         // 문서 전체 클릭 시 커스텀 메뉴 숨김
@@ -298,15 +345,12 @@
                 // 메시지 수신 구독
                 stompClient.subscribe("/topic/messages", function (message) {
                     const data = JSON.parse(message.body);
-                    // 현재 열려있는 방과 동일할 때만 표시 (roomName이 일치하는가?)
-                    if (data.roomName === currentRoom) {
-                        if (data.deleted === true) {
-                            // 이미 표시된 말풍선을 찾아서 텍스트를 "삭제된 메시지 입니다."로 변경
-                            updateBubbleContent(data.id, data.content);
-                        } else {
-                            // 일반 메시지 도착 시 -> 말풍선 새로 추가
-                            addMessageBubble(data);
-                        }
+
+                    if (data.deleted) {
+                        // ✅ 삭제된 메시지가 도착하면 UI에서 즉시 반영
+                        updateBubbleContent(data.chatId, data.content, true);
+                    } else {
+                        addMessageBubble(data);
                     }
                 });
             }, function (error) {
@@ -338,9 +382,11 @@
                 const div = document.createElement("div");
                 div.className = "room-item";
                 div.innerText = room.roomName; //room객체의 roomName
-                // 더블클릭하면 해당 방 접속
+                // 클릭하면 해당 방 접속
                 div.ondblclick = () => {
-                    selectRoom(room.roomName);
+                    currentRoomId = room.roomId;   // MongoDB 식별자
+                    currentRoomName = room.roomName;
+                    selectRoom(currentRoomId, currentRoomName);
                 };
                 roomContainerEl.appendChild(div);
             });
@@ -348,14 +394,15 @@
 
             // 4) 방 선택 & 이전 메시지 불러오기
 
-        function selectRoom(roomName) {
+        function selectRoom(roomId, roomName) {
             // 현재 방 설정
+            currentRoomId = roomId;
             currentRoom = roomName;
             // 채팅창 비우기
             chatMessagesEl.innerHTML = "";
             // REST API로 과거 메시지 로드
             $.ajax({
-                url: `http://127.0.0.1:9500/chat/messages/${encodeURIComponent(roomName)}`,
+                url: `http://127.0.0.1:9500/chat/messages/${encodeURIComponent(roomId)}`,
                 type: "GET",
                 success: function (messages) {
                     // [{name, roomName, content, ...}, ...]
@@ -371,45 +418,26 @@
             });
         }
 
-            // 5) 메시지 전송
-
-        function sendMessage() {
-            if (!stompClient || !stompClient.connected) {
-                alert("WebSocket 연결되지 않았습니다.");
-                return;
-            }
-            if (!currentRoom) {
-                alert("채팅방을 먼저 선택하세요.");
-                return;
-            }
-            const content = $("#messageInput").val().trim();
-            if (!content) return;
-
-            const chatMessage = {
-                name: currentUser,
-                roomName: currentRoom,
-                content: content
-            };
-
-            stompClient.send("/app/chat", {}, JSON.stringify(chatMessage));
-            // 입력창 비우기
-            $("#messageInput").val("");
-        }
 
              // 6) 메시지 삭제
 
-        function deleteMessage(messageId) {
+        function deleteMessage(chatId) {
+            let bubble = document.querySelector(`.chat-bubble[data-id='${chatId}']`);
+            let originalContent = bubble ? bubble.innerText : "";
+
+            // ✅ UI를 즉시 변경 (서버 응답을 기다리지 않음)
+            updateBubbleContent(chatId, "삭제된 메시지입니다.", true);
+
             $.ajax({
-                url: "http://127.0.0.1:9500/chat/messages/" + messageId,
+                url: "http://127.0.0.1:9500/chat/messages/" + chatId,
                 type: "DELETE",
                 success: function(updatedMessage) {
                     console.log("삭제 완료", updatedMessage);
-                    // 클라이언트가 이미 말풍선을 렌더링하고 있다면,
-                    // messageId에 해당하는 말풍선 찾아 "삭제된 메시지 입니다." 로 UI 변경
-                    updateBubbleContent(updatedMessage.id, updatedMessage.content,updatedMessage.deleted);
                 },
                 error: function(err) {
                     console.error("메시지 삭제 실패", err);
+                    //서버 삭제 실패 시 원래 내용으로 복구
+                    updateBubbleContent(chatId, originalContent, false);
                 }
             });
         }
@@ -421,9 +449,9 @@
             bubble.classList.add("chat-bubble");
 
             // 메시지 식별자(data-id)에 저장
-            bubble.dataset.id = msg.id;
+            bubble.dataset.id = msg.chatId;
 
-            const displayContent = msg.deleted ? "삭제된 메시지입니다." : msg.content;
+            let displayContent = msg.deleted ? "삭제된 메시지입니다." : msg.content;
             bubble.innerText = `[${msg.name}] ${displayContent}`;
             if (msg.name === currentUser) {
                 bubble.classList.add("my-message");
@@ -442,7 +470,7 @@
                     return false;
                 }
                 // 현재 메시지 ID 저장
-                currentMessageId = msg.id;
+                currentChatId = msg.chatId;
                 // 커스텀 메뉴 위치 및 표시
                 customMenu.style.left = e.pageX + "px";
                 customMenu.style.top = e.pageY + "px";
@@ -451,8 +479,8 @@
             });
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
         }
-        function updateBubbleContent(messageId, newContent, isDeleted) {
-            let bubble = document.querySelector(`.chat-bubble[data-id='${messageId}']`);
+        function updateBubbleContent(chatId, newContent, isDeleted) {
+            let bubble = document.querySelector(`.chat-bubble[data-id='${chatId}']`);
             if (bubble) {
                 bubble.innerText = isDeleted ? "삭제된 메시지입니다." : newContent;
             }
@@ -504,6 +532,207 @@
                 }
             });
         });
+        function renderRoomList(rooms) {
+            roomContainerEl.innerHTML = "";
+            rooms.forEach(room => {
+                const div = document.createElement("div");
+                div.className = "room-item";
+
+                // room object를 저장(나중에 찾기 위함)
+                // (단, roomId roomName, members, createdAt, creatorName 등)
+                div.dataset.roomId = room.roomId;
+                div.dataset.roomName = room.roomName;
+                // members, createdAt, creatorName 등도 JSON.stringify로 저장 가능
+                div.dataset.roomInfo = JSON.stringify(room);
+
+                div.innerText = room.roomName;
+
+                // 더블클릭하면 기존 로직: 방 접속
+                div.ondblclick = () => {
+                    currentRoomId = room.roomId;
+                    currentRoomName = room.roomName;
+                    selectRoom(currentRoomName,currentRoomId);
+                };
+
+                // ★ 우클릭(컨텍스트 메뉴)
+                div.addEventListener("contextmenu", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // 우클릭한 방 정보를 전역/임시변수로 저장
+                    selectedRoomData = JSON.parse(div.dataset.roomInfo);
+
+                    // 컨텍스트 메뉴 위치
+                    const menu = document.getElementById("roomContextMenu");
+                    menu.style.left = e.pageX + "px";
+                    menu.style.top = e.pageY + "px";
+                    menu.style.display = "block";
+                    return false;
+                });
+
+                roomContainerEl.appendChild(div);
+            });
+        }
+        // 문서 전체 클릭 시, roomContextMenu 숨기기
+        document.addEventListener("click", function() {
+            $("#roomContextMenu").hide();
+        });
+
+        // 방정보 버튼
+        $("#viewRoomInfoOption").on("click", function() {
+            // 1) 컨텍스트 메뉴 숨기기
+            $("#roomContextMenu").hide();
+
+            if (!selectedRoomData) {
+                console.error("No selected room data");
+                return;
+            }
+            // 2) 방 정보 모달 표시
+            showRoomInfoModal(selectedRoomData);
+        });
+
+        // 나가기 버튼
+        $("#leaveRoomOption").on("click", function() {
+            // 1) 컨텍스트 메뉴 숨기기
+            $("#roomContextMenu").hide();
+
+            if (!selectedRoomData) return;
+            // 2) 나가기 Ajax
+            leaveRoom(selectedRoomData.roomId, currentUser);
+        });
+        function showRoomInfoModal(room) {
+            // room = { roomId, roomName, members, createdAt, creatorName, ... }
+            // (1) 이미지 (여기서는 임시로 고정된 이미지를 사용하거나, room에 이미지 필드가 있다면 연결)
+            $("#roomImage").attr("src", "https://via.placeholder.com/100");
+
+            // (2) 방 이름
+            $("#roomInfoName").text(room.roomName);
+
+            // (3) 대화 참여자
+            $("#roomInfoMembers").empty();
+            if (room.members) {
+                room.members.forEach(member => {
+                    $("#roomInfoMembers").append(`<li>${member}</li>`);
+                });
+            }
+
+            // (4) 방 개설일
+            // room.createdAt가 문자열 ISODate이면, 필요한 형식으로 변환(예: substring)
+            $("#roomCreatedAt").text(room.createdAt ? room.createdAt : "(알 수 없음)");
+
+            // (5) 방 개설자
+            $("#roomCreator").text(room.creatorName ? room.creatorName : "(정보 없음)");
+
+            // 모달 열기
+            $("#roomInfoModal").show();
+        }
+
+        // 모달 닫기 버튼
+        $("#roomInfoCloseBtn").on("click", function() {
+            $("#roomInfoModal").hide();
+        });
+        function leaveRoom(roomId, name) {
+            if (!roomId || !name) {
+                console.error("방ID 또는 사용자명이 없습니다.");
+                return;
+            }
+
+            // DELETE /rooms/{roomId}/members/{name}
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/rooms/${roomId}/members/${name}`,
+                type: "DELETE",
+                success: function(updatedRoom) {
+                    alert("방에서 나갔습니다.");
+                    // 로컬 UI 갱신
+                    // 1) 방 목록 다시 로드
+                    loadRoomList();
+                    // 2) 혹시 현재 대화창이 이 방이었다면, 대화창 비움
+                    if (currentRoomId === roomId) {
+                        currentRoomId = null;
+                        currentRoom = "";
+                        $("#chatMessages").empty();
+                    }
+                },
+                error: function() {
+                    alert("방 나가기 실패");
+                }
+            });
+        }
+        document.getElementById("imageUpload").addEventListener("change", function(event) {
+            let file = event.target.files[0]; // 선택한 파일
+            if (file) {
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById("imagePreview").src = e.target.result;
+                    document.getElementById("imagePreview").style.display = "block";
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function sendMessage() {
+            if (!currentRoomId){
+                alert("채팅방을 먼저 선택하세요.");
+                return;
+            }
+
+            let content = $("#messageInput").val().trim();
+            let fileInput = document.getElementById("imageUpload");
+            let file = fileInput.files[0];
+            if (!content && !file) return;  // 메시지나 이미지가 없으면 전송하지 않음
+
+            // REST API를 통해 메시지 저장 (파일 업로드 포함)
+            let formData = new FormData();
+            formData.append("content", content);
+            formData.append("name", currentUser);
+            formData.append("roomId", currentRoomId);
+            if (file) {
+                formData.append("image", file);
+            }
+
+            fetch("/chat/send", {
+                method: "POST",
+                body: formData
+            })
+                .then(res => {
+                    if (!res.ok) {
+                        // 에러 응답일 때도 JSON이 내려올 수도 있고, 아닐 수도 있음
+                        // -> 보통 text()를 먼저 읽어서 표시하거나,
+                        //    혹은 try { return res.json() } catch(e) { return res.text() } 로 처리
+                        return res.text().then(txt => {
+                            throw new Error(`서버 에러: ${res.status}, ${txt}`);
+                        });
+                    }
+                    return res.json(); // 2xx라면 JSON 반환
+                })
+                .then(data => {
+                    console.log("성공:", data);
+                })
+                .catch(err => console.error("메시지 전송 실패:", err));
+
+            // 입력 필드 초기화
+            document.getElementById("messageInput").value = "";
+            fileInput.value = "";
+            document.getElementById("imagePreview").style.display = "none";
+        }
+
+        function displayMessage(data) {
+            let chatArea = document.getElementById("chatMessages");
+            let messageElement = document.createElement("div");
+
+            messageElement.innerHTML = `<p>${data.content}</p>`;
+
+            if (data.imageUrl) {
+                let img = document.createElement("img");
+                img.src = data.imageUrl;
+                img.style.maxWidth = "200px";
+                messageElement.appendChild(img);
+            }
+
+            chatArea.appendChild(messageElement);
+        }
+
+
     </script>
 </body>
 </html>

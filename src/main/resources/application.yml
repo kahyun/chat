@@ -2,6 +2,10 @@ spring:
   application:
     name: chat
 
+  thymeleaf:
+    cache: false
+
+
   data:
     mongodb:
       uri: "mongodb://localhost:27017/chat_db"
@@ -18,3 +22,4 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
     register-with-eureka: true
     fetch-registry: true
+

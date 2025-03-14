@@ -10,34 +10,23 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 
 @Service
 @RequiredArgsConstructor
 public class ChatService {
+
+    private final Logger log = LoggerFactory.getLogger(ChatService.class);
     private final ChatMessageRepository chatMessageRepository;
     private final MongoTemplate mongoTemplate;
 
     public ChatMessage saveMessage(ChatMessage message) {
-        try {
-            message = new ChatMessage(
-                    message.getChatId(),
-                    message.getName(),
-                    message.getRoomName(),
-                    message.getContent(),
-                    LocalDateTime.now(),
-                    false,
-                    false
-            );
-            ChatMessage saved = chatMessageRepository.save(message);
-            return saved;
-        } catch (Exception e) {
-            return null;
-        }
+            return chatMessageRepository.save(message);
     }
 
-    public List<ChatMessage> getMessagesByRoom(String roomName) {
-        return chatMessageRepository.findByRoomName(roomName);
+    public List<ChatMessage> getMessagesByRoom(String roomId) {
+        return chatMessageRepository.findByRoomId(roomId);
     }
     public List<String> findDistinctRoomNames() {
         return mongoTemplate.query(ChatMessage.class)
@@ -45,10 +34,16 @@ public class ChatService {
                 .as(String.class)
                 .all();
     }
-    public ChatMessage deleteMessage(String messageId) {
-        ChatMessage message = chatMessageRepository.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("메시지를 찾을 수 없습니다:"+ messageId));
-        message.setDeleted(true);
-        return chatMessageRepository.save(message);
+    public ChatMessage deleteMessage(String chatId) {
+        Optional<ChatMessage> existingMessage = chatMessageRepository.findById(chatId);
+        if (existingMessage.isPresent()) {
+            ChatMessage message = existingMessage.get();
+            message.setDeleted(true);
+            message.setContent("삭제된 메시지입니다.");
+            return chatMessageRepository.save(message);
+        } else {
+            throw new RuntimeException("메시지를 찾을 수 없습니다.");
+        }
     }
+
 }
