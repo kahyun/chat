@@ -9,7 +9,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:uploads/");  // ✅ 서버 내부 폴더를 정적 리소스로 제공
+        // 실제 물리 폴더 경로
+        String fullPath = System.getProperty("user.dir") + "/uploads/";
+        registry.addResourceHandler("/files/**")
+                .addResourceLocations("file:" + fullPath);  // ✅ 서버 내부 폴더를 정적 리소스로 제공
     }
 }

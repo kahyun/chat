@@ -5,12 +5,20 @@ import com.example.chat.entity.ChatMessage;
 import com.example.chat.service.ChatService;
 import com.example.chat.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -57,7 +65,7 @@ public class ChatRestController {
             @RequestParam(value = "content", required = false) String content,
             @RequestParam(value = "image", required = false) MultipartFile imageFile) {
 
-        // 1) 이미지 저장
+//        // 1) 이미지 저장
         String imageUrl = null;
         if (imageFile != null && !imageFile.isEmpty()) {
             imageUrl = fileStorageService.saveFile(imageFile);
@@ -68,7 +76,7 @@ public class ChatRestController {
                 return ResponseEntity.badRequest().body(errorBody);
             }
         }
-        // 2) DB 저장 (chatId는 MongoDB가 자동생성)
+//        // 2) DB 저장 (chatId는 MongoDB가 자동생성)
         ChatMessage chatMessage = chatService.saveMessage(new ChatMessage(null, name, roomId, content, imageUrl, LocalDateTime.now(), false, false));
 
         // 3) DB에 저장된 진짜 chatId를 가진 메시지를 WebSocket으로 broadcast
@@ -83,5 +91,31 @@ public class ChatRestController {
                 chatMessage.getCreatedAt()
         ));
     }
+//    @GetMapping("/files/{storedFileName:.+}")
+//    public ResponseEntity<Resource> downloadFile(@PathVariable String storedFileName) {
+//        try {
+//            System.out.println("downloadFile => " + storedFileName);
+//            // ✅ 실제 저장된 파일 찾기
+//            File file = fileStorageService.getFile(storedFileName);
+//            System.out.println("downloadFile => " + storedFileName);
+//            System.out.println("FILE PATH => " + file.getAbsolutePath());
+//            System.out.println("EXISTS? => " + file.exists());
+//
+//            if (!file.exists()) {
+//                return ResponseEntity.notFound().build();
+//            }
+//
+//            String encodedFileName = URLEncoder.encode(storedFileName, StandardCharsets.UTF_8).replace("+","%20");
+//            Resource resource = new FileSystemResource(file);
+//
+//            return ResponseEntity.ok()
+//                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + encodedFileName + "\"")
+//                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+//                    .body(resource);
+//
+//        } catch (Exception e) {
+//            return ResponseEntity.internalServerError().build();        }
+//    }
+
 
 }

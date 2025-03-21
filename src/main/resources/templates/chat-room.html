@@ -154,6 +154,35 @@
             margin-right: 10px;
             cursor: pointer;
         }
+        /* 이미지 미리보기 모달 스타일 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-content {
+            display: block;
+            margin: auto;
+            max-width: 80%;
+            max-height: 80%;
+        }
+
+        .download-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
 
     </style>
 </head>
@@ -237,7 +266,12 @@
             <button id="roomInfoCloseBtn">닫기</button>
         </div>
     </div>
-
+    <!-- 이미지 클릭 시 미리보기 모달 -->
+    <div id="imageModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="previewImage">
+        <a id="downloadLink" class="download-btn" download>다운로드</a>
+    </div>
 
     <script>
         let stompClient = null;
@@ -376,22 +410,6 @@
             });
         }
 
-        function renderRoomList(rooms) {
-            roomContainerEl.innerHTML = "";
-            rooms.forEach(room => {
-                const div = document.createElement("div");
-                div.className = "room-item";
-                div.innerText = room.roomName; //room객체의 roomName
-                // 클릭하면 해당 방 접속
-                div.ondblclick = () => {
-                    currentRoomId = room.roomId;   // MongoDB 식별자
-                    currentRoomName = room.roomName;
-                    selectRoom(currentRoomId, currentRoomName);
-                };
-                roomContainerEl.appendChild(div);
-            });
-        }
-
             // 4) 방 선택 & 이전 메시지 불러오기
 
         function selectRoom(roomId, roomName) {
@@ -450,9 +468,30 @@
 
             // 메시지 식별자(data-id)에 저장
             bubble.dataset.id = msg.chatId;
-
+            // 말풍선 기본 텍스트
             let displayContent = msg.deleted ? "삭제된 메시지입니다." : msg.content;
+            // 기본 텍스트(이름 + 메시지)
             bubble.innerText = `[${msg.name}] ${displayContent}`;
+            // ★ 만약 msg.imageUrl이 있으면, 이미지 태그 추가
+            if (msg.imageUrl) {
+                let parts = msg.imageUrl.split("|");
+                let encodedUrl = parts[0];       // ex) "/files/uuid_파일명.jpg"
+                let originalName  = parts[1];
+                // 이미지 태그 생성
+                const imgEl = document.createElement("img");
+                imgEl.src = encodedUrl;
+                imgEl.style.maxWidth = "200px";     // 썸네일 사이즈
+                imgEl.style.display = "block";      // 줄바꿈 처리
+                imgEl.style.marginTop = "5px";      // 텍스트와 간격
+
+                // 클릭 시 큰 이미지로 띄우기 (모달 등)
+                imgEl.addEventListener("click", function() {
+                    openImageModal(encodedUrl, originalName);
+                });
+
+                bubble.appendChild(imgEl);
+            }
+            // 내 메시지 vs 다른사람 메시지 스타일
             if (msg.name === currentUser) {
                 bubble.classList.add("my-message");
             } else {
@@ -477,6 +516,7 @@
                 customMenu.style.display = "block";
                 return false;
             });
+            // 스크롤 항상 아래로
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
         }
         function updateBubbleContent(chatId, newContent, isDeleted) {
@@ -551,7 +591,7 @@
                 div.ondblclick = () => {
                     currentRoomId = room.roomId;
                     currentRoomName = room.roomName;
-                    selectRoom(currentRoomName,currentRoomId);
+                    selectRoom(currentRoomId,currentRoomName);
                 };
 
                 // ★ 우클릭(컨텍스트 메뉴)
@@ -716,21 +756,183 @@
             document.getElementById("imagePreview").style.display = "none";
         }
 
-        function displayMessage(data) {
-            let chatArea = document.getElementById("chatMessages");
-            let messageElement = document.createElement("div");
+        function openImageModal(encodedUrl, originalName) {
+            let modal = document.getElementById("imageModal");
+            let modalImg = document.getElementById("previewImage");
+            let downloadLink = document.getElementById("downloadLink");
 
-            messageElement.innerHTML = `<p>${data.content}</p>`;
+            modal.style.display = "block";
+            modalImg.src = encodedUrl;
 
-            if (data.imageUrl) {
-                let img = document.createElement("img");
-                img.src = data.imageUrl;
-                img.style.maxWidth = "200px";
-                messageElement.appendChild(img);
+            // 다운로드 링크 설정
+            downloadLink.href = encodedUrl;
+            downloadLink.download = originalName;
+        }
+
+        function closeModal() {
+            document.getElementById("imageModal").style.display = "none";
+        }
+
+        // 모달 닫기
+        document.getElementById("imageModalCloseBtn").onclick = function() {
+            document.getElementById("imageModal").style.display = "none";
+        };
+        function editMessage(chatId) {
+            let newText = prompt("수정할 메시지를 입력하세요.");
+            if (!newText) return;
+
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/messages/${chatId}`,
+                type: "PUT",
+                contentType: "application/json",
+                data: JSON.stringify({ content: newText }),
+                success: function () {
+                    alert("메시지 수정 완료!");
+                    loadMessages(); // 메시지 다시 로드
+                },
+                error: function () {
+                    alert("메시지 수정 실패");
+                }
+            });
+        }
+
+        // 우클릭 메뉴에 "수정" 추가
+        $("#customMenu ul").append(`<li id="editOption">수정</li>`);
+        $("#editOption").on("click", function () {
+            if (currentChatId) {
+                editMessage(currentChatId);
+            }
+            $("#customMenu").hide();
+            currentChatId = null;
+        });
+        function markMessagesAsRead() {
+            if (!currentRoomId) return;
+
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/messages/${currentRoomId}/read`,
+                type: "POST",
+                success: function () {
+                    console.log("메시지 읽음 처리 완료");
+                },
+                error: function () {
+                    console.error("메시지 읽음 처리 실패");
+                }
+            });
+        }
+
+        // 채팅방 입장 시 메시지 읽음 처리
+        function selectRoom(roomId, roomName) {
+            currentRoomId = roomId;
+            currentRoom = roomName;
+            chatMessagesEl.innerHTML = "";
+
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/messages/${encodeURIComponent(roomId)}`,
+                type: "GET",
+                success: function (messages) {
+                    messages.forEach(msg => addMessageBubble(msg));
+                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+                    markMessagesAsRead(); // ✅ 메시지 읽음 처리 실행
+                },
+                error: function () {
+                    console.error("❌ 메시지 목록 가져오기 실패");
+                }
+            });
+        }
+        document.getElementById("imageUpload").addEventListener("change", function (event) {
+            let file = event.target.files[0];
+            if (!file) return;
+
+            let reader = new FileReader();
+            reader.onload = function (e) {
+                document.getElementById("imagePreview").src = e.target.result;
+                document.getElementById("imagePreview").style.display = "block";
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function sendMessage() {
+            if (!currentRoomId) {
+                alert("채팅방을 먼저 선택하세요.");
+                return;
             }
 
-            chatArea.appendChild(messageElement);
+            let content = $("#messageInput").val().trim();
+            let fileInput = document.getElementById("imageUpload");
+            let file = fileInput.files[0];
+
+            if (!content && !file) return; // 메시지나 파일이 없으면 전송하지 않음
+
+            let formData = new FormData();
+            formData.append("content", content);
+            formData.append("name", currentUser);
+            formData.append("roomId", currentRoomId);
+            if (file) {
+                formData.append("image", file);
+            }
+
+            fetch("/chat/send", {
+                method: "POST",
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    console.log("메시지 전송 성공:", data);
+                    $("#messageInput").val(""); // 입력 필드 초기화
+                    fileInput.value = "";
+                    document.getElementById("imagePreview").style.display = "none";
+                })
+                .catch(err => console.error("메시지 전송 실패:", err));
         }
+        function inviteMembers(roomId, selectedMembers) {
+            $.ajax({
+                url: `http://127.0.0.1:9500/chat/rooms/${roomId}/invite`,
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ members: selectedMembers }),
+                success: function () {
+                    alert("초대 완료!");
+                },
+                error: function () {
+                    alert("초대 실패");
+                }
+            });
+        }
+
+        // 방 생성 시 초대 기능 추가
+        $("#confirmRoomBtn").on("click", function (e) {
+            e.preventDefault();
+            const roomName = modalRoomName.value.trim();
+            if (!roomName) {
+                alert("방 이름을 입력하세요.");
+                return;
+            }
+
+            const selectedMembers = [];
+            $("#memberList input[type='checkbox']:checked").each(function () {
+                selectedMembers.push($(this).val());
+            });
+
+            if (!selectedMembers.includes(currentUser)) {
+                selectedMembers.push(currentUser);
+            }
+
+            $.ajax({
+                url: "http://127.0.0.1:9500/chat/rooms",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ roomName: roomName, name: selectedMembers }),
+                success: function (createdRoom) {
+                    alert("방 생성 완료!");
+                    $("#roomModal").hide();
+                    loadRoomList();
+                    inviteMembers(createdRoom.roomId, selectedMembers); // 초대 실행
+                },
+                error: function () {
+                    alert("방 생성 실패");
+                }
+            });
+        });
 
 
     </script>
